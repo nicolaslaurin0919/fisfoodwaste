@@ -1,51 +1,59 @@
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
-from urllib.request import urlopen
 from sklearn.linear_model import LinearRegression
 import datetime
+from urllib.request import urlopen
 
-# 📌 GITHUB FILE PATHS (Ensure files are in your repository)
-GITHUB_REPO = "https://raw.githubusercontent.com/nicolaslaurin0919/fisfoodwaste/main/"
-fis_logo_url = GITHUB_REPO + "fis_logo.jpg"
-purchase_file_url = GITHUB_REPO + "purchase_data.csv"
-consumption_file_url = GITHUB_REPO + "consumption_data.csv"
-food_bank_file_url = GITHUB_REPO + "food_banks.csv"
+# GitHub-hosted file URLs (ensure they are correct!)
+repo_url = "https://raw.githubusercontent.com/nicolaslaurin0919/fisfoodwaste/main/"
+purchase_file_url = repo_url + "purchase_data.csv"
+consumption_file_url = repo_url + "consumption_data.csv"
+food_bank_file_url = repo_url + "food_banks.csv"
+fis_logo_url = repo_url + "fis_logo.jpg"
 
-# ✅ Load FIS Logo
+# Load FIS Logo
 fis_logo = Image.open(urlopen(fis_logo_url))
 
-# ✅ Function to Load Data from GitHub CSVs
+# ✅ Function to Load CSV Data
 @st.cache_data
 def load_data():
     try:
-        purchases = pd.read_csv(purchase_file_url)
+        purchases = pd.read_csv(purchase_file_url, names=["Food", "Purchased", "Date", "Expiry"])
         purchases["Date"] = pd.to_datetime(purchases["Date"], errors="coerce")
         purchases["Expiry"] = pd.to_datetime(purchases["Expiry"], errors="coerce")
         purchases["Purchased"] = pd.to_numeric(purchases["Purchased"], errors="coerce").fillna(0)
 
-        consumption = pd.read_csv(consumption_file_url)
+        consumption = pd.read_csv(consumption_file_url, names=["Food", "Consumed", "Date"])
         consumption["Date"] = pd.to_datetime(consumption["Date"], errors="coerce")
         consumption["Consumed"] = pd.to_numeric(consumption["Consumed"], errors="coerce").fillna(0)
 
         return purchases, consumption
-    except:
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
-# ✅ Function to Load Food Bank Data
+# ✅ Function to Load Food Banks
 @st.cache_data
 def load_food_banks():
     try:
-        return pd.read_csv(food_bank_file_url)
-    except:
+        food_banks = pd.read_csv(food_bank_file_url)
+        return food_banks
+    except Exception as e:
+        st.error(f"Error loading food bank data: {e}")
         return pd.DataFrame(columns=["Name", "Address", "Contact", "Website"])
 
-# ✅ Sidebar Navigation
+# ✅ Sidebar with Navigation
 st.sidebar.header("🚀 Explore the FIS Food AI System!")
 menu_options = ["🏠 Home", "✏️ Data Entry", "📜 Inventory", "📊 Surplus", "📈 Predictive AI", "🥫 Food Banks"]
-menu = st.sidebar.radio("📌 Choose a section:", menu_options)
+
+if "menu" not in st.session_state:
+    st.session_state["menu"] = menu_options[0]
+
+menu = st.sidebar.radio("📌 Choose a section:", menu_options, index=menu_options.index(st.session_state["menu"]))
 
 # ✅ Home Page
 if menu == "🏠 Home":
@@ -55,7 +63,8 @@ if menu == "🏠 Home":
     st.write("""
     **Why is this system important for the French International School of Hong Kong (FIS)?**
     
-    Every day, **significant amounts of food** are wasted. AI can **analyze patterns, predict food waste, and automate surplus allocation**.  
+    Every day, **significant amounts of food** are wasted in schools worldwide, including at FIS.  
+    While humans can track and manage food manually, **AI can analyze patterns, predict food waste, and automate surplus allocation**.  
 
     **Key Benefits:**
     - **Real-time tracking**: Instantly logs purchases & consumption.
@@ -69,106 +78,61 @@ if menu == "🏠 Home":
         st.session_state["menu"] = "✏️ Data Entry"
         st.rerun()
 
-# ✅ Inventory Page
-elif menu == "📜 Inventory":
-    st.subheader("📦 Food Inventory")
-    purchases, consumption = load_data()
+# ✅ Data Entry Page (Fixed)
+elif menu == "✏️ Data Entry":
+    st.subheader("✏️ Log Food Purchases & Consumption")
 
-    if purchases.empty and consumption.empty:
-        st.warning("⚠️ No food records found. Please add data in 'Data Entry'.")
-    else:
-        st.write("### 📋 Purchase Records")
-        if not purchases.empty:
-            st.dataframe(purchases)
-
-        st.write("### 🍽️ Consumption Records")
-        if not consumption.empty:
-            st.dataframe(consumption)
-
-# ✅ Surplus Page
-elif menu == "📊 Surplus":
-    st.subheader("📊 Food Surplus Overview")
-    purchases, consumption = load_data()
-
-    if purchases.empty:
-        st.warning("⚠️ No purchase data found.")
-    else:
-        total_purchased = purchases.groupby("Food")["Purchased"].sum()
-        total_consumed = consumption.groupby("Food")["Consumed"].sum()
-        surplus = total_purchased.subtract(total_consumed, fill_value=0)
-        surplus = surplus[surplus > 0]
-
-        if surplus.empty:
-            st.warning("⚠️ No surplus available.")
-        else:
-            st.bar_chart(surplus)
-
-# ✅ Predictive AI Page
-elif menu == "📈 Predictive AI":
-    st.subheader("📈 AI-Powered Food Surplus Prediction")
-
-    st.markdown("""
-    ### 🤖 How Does AI Predict Food Surplus?
-    The system **analyzes past food purchase & consumption trends** using **Machine Learning (Linear Regression)** to predict future surplus.
-    """)
+    action_type = st.radio("Select Action:", ["Purchase", "Consumption"])
 
     purchases, consumption = load_data()
+    food_items = sorted(set(purchases["Food"].dropna().unique()) | set(consumption["Food"].dropna().unique()))
+    food_items.append("➕ Add New Item...")
+    selected_food = st.selectbox("Select or Add a New Food Item:", food_items)
 
-    if purchases.empty or consumption.empty:
-        st.warning("⚠️ Not enough data for prediction.")
-    else:
-        purchases["Days_Ago"] = (pd.Timestamp.today() - purchases["Date"]).dt.days
-        purchases["Expiry_Days"] = (purchases["Expiry"] - pd.Timestamp.today()).dt.days
-        consumption["Days_Ago"] = (pd.Timestamp.today() - consumption["Date"]).dt.days
+    if selected_food == "➕ Add New Item...":
+        selected_food = st.text_input("Enter New Food Item:")
 
-        purchases = purchases.dropna(subset=["Days_Ago", "Purchased", "Expiry_Days"])
-        consumption = consumption.dropna(subset=["Days_Ago", "Consumed"])
+    quantity = st.number_input("Enter Quantity (kg):", min_value=0.1, step=0.1)
 
-        surplus_predictions = []
+    if action_type == "Purchase":
+        purchase_date = st.date_input("Purchase Date", datetime.date.today())
+        expiry_date = st.date_input("Expiry Date", datetime.date.today())
 
-        for food in purchases["Food"].unique():
-            if food in consumption["Food"].values:
-                model = LinearRegression()
+        if st.button("➕ Add Purchase"):
+            new_data = pd.DataFrame([[selected_food, quantity, purchase_date, expiry_date]],
+                                    columns=["Food", "Purchased", "Date", "Expiry"])
+            new_data.to_csv(purchase_file_url, mode='a', index=False, header=False)
+            st.success(f"✅ {quantity} kg of {selected_food} added to purchases!")
 
-                # Predict Purchases
-                purchase_data = purchases[purchases["Food"] == food]
-                if len(purchase_data) > 1:
-                    model.fit(purchase_data[["Days_Ago"]], purchase_data["Purchased"])
-                    predicted_purchase = max(0, model.predict([[0]])[0])
-                else:
-                    predicted_purchase = purchase_data["Purchased"].sum()
+    elif action_type == "Consumption":
+        consumption_date = st.date_input("Consumption Date", datetime.date.today())
 
-                # Predict Consumption
-                consumption_data = consumption[consumption["Food"] == food]
-                if len(consumption_data) > 1:
-                    model.fit(consumption_data[["Days_Ago"]], consumption_data["Consumed"])
-                    predicted_consumption = max(0, model.predict([[0]])[0])
-                else:
-                    predicted_consumption = consumption_data["Consumed"].sum()
+        if st.button("🍽️ Log Consumption"):
+            new_data = pd.DataFrame([[selected_food, quantity, consumption_date]],
+                                    columns=["Food", "Consumed", "Date"])
+            new_data.to_csv(consumption_file_url, mode='a', index=False, header=False)
+            st.success(f"✅ {quantity} kg of {selected_food} logged as consumed!")
 
-                # Calculate Surplus
-                predicted_surplus = max(0, predicted_purchase - predicted_consumption)
-                expiry_date = purchases[purchases["Food"] == food]["Expiry"].min().strftime("%Y-%m-%d")
-                surplus_predictions.append({"Food": food, "Surplus (kg)": round(predicted_surplus, 2), "Expiry Date": expiry_date})
-
-        surplus_df = pd.DataFrame(surplus_predictions)
-
-        if not surplus_df.empty:
-            st.dataframe(surplus_df)
-
-# ✅ Food Banks Page
+# ✅ Food Banks Page (Fixed)
 elif menu == "🥫 Food Banks":
     st.subheader("🥫 Hong Kong Food Banks Directory")
+
     food_banks = load_food_banks()
 
     if food_banks.empty:
         st.warning("⚠️ No food banks found.")
     else:
+        st.write("### 📋 Available Food Banks")
         st.dataframe(food_banks)
 
-        for _, row in food_banks.iterrows():
-            st.markdown(f"**🏛️ {row['Name']}**")
-            st.write(f"📍 **Address:** {row['Address']}")
-            st.write(f"📞 **Contact:** {row['Contact']}")
-            st.write(f"🌐 **Website:** [{row['Website']}]({row['Website']})")
+        # Ensure correct column names
+        required_columns = {"Name", "Address", "Contact", "Website"}
+        if not required_columns.issubset(food_banks.columns):
+            st.error(f"⚠️ Missing required columns! Found: {food_banks.columns.tolist()}")
+        else:
+            for _, row in food_banks.iterrows():
+                st.markdown(f"**🏛️ {row['Name']}**")
+                st.write(f"📍 **Address:** {row['Address']}")
+                st.write(f"📞 **Contact:** {row['Contact']}")
+                st.write(f"🌐 **Website:** [{row['Website']}]({row['Website']})")
 
