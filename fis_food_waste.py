@@ -141,14 +141,29 @@ elif menu == "📈 Predictive AI":
         st.warning("⚠️ Not enough data for prediction.")
     else:
         surplus_predictions = []
+        
         for food in purchases["Food"].unique():
             if food in consumption["Food"].values:
                 predicted_surplus = np.random.randint(1, 10)
-                expiry_date = purchases[purchases["Food"] == food]["Expiry"].min().strftime("%Y-%m-%d")
+
+                # 🛠 Fix: Handle Missing Expiry Dates
+                expiry_date_value = purchases[purchases["Food"] == food]["Expiry"].min()
+                
+                if pd.isna(expiry_date_value):  # If expiry date is missing
+                    expiry_date = "No Expiry Date"
+                else:
+                    expiry_date = expiry_date_value.strftime("%Y-%m-%d")
+
                 surplus_predictions.append({"Food": food, "Surplus (kg)": predicted_surplus, "Expiry Date": expiry_date})
-        
+
+        # Convert to DataFrame for Display
         surplus_df = pd.DataFrame(surplus_predictions)
-        st.dataframe(surplus_df)
+
+        if surplus_df.empty:
+            st.warning("⚠️ No predicted surplus available.")
+        else:
+            st.write("### 📊 Predicted Food Surplus Breakdown")
+            st.dataframe(surplus_df)
 
 # ✅ Food Banks Page
 elif menu == "🥫 Food Banks":
