@@ -1,0 +1,166 @@
+import os
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
+from sklearn.linear_model import LinearRegression
+import datetime
+from streamlit_js_eval import streamlit_js_eval  # Detect scroll position
+
+# File paths
+purchase_file = "/Users/nicolaslaurin/Documents/purchase_data.csv"
+consumption_file = "/Users/nicolaslaurin/Documents/consumption_data.csv"
+food_icon_path = "/Users/nicolaslaurin/Documents/food_icons/"
+fis_logo_path = "/Users/nicolaslaurin/Documents/fis_logo.jpg"
+
+# Load the FIS Logo
+fis_logo = Image.open(fis_logo_path)
+
+# Load Data
+def load_data():
+    try:
+        purchases = pd.read_csv(purchase_file, names=["Food", "Purchased", "Date", "Expiry"])
+        purchases["Date"] = pd.to_datetime(purchases["Date"], errors="coerce")
+        purchases["Expiry"] = pd.to_datetime(purchases["Expiry"], errors="coerce")
+
+        consumption = pd.read_csv(consumption_file, names=["Food", "Consumed", "Date"])
+        consumption["Date"] = pd.to_datetime(consumption["Date"], errors="coerce")
+
+        return purchases, consumption
+    except FileNotFoundError:
+        return pd.DataFrame(columns=["Food", "Purchased", "Date", "Expiry"]), pd.DataFrame(columns=["Food", "Consumed", "Date"])
+
+# Sidebar Navigation (Sticky)
+st.markdown(
+    """
+    <style>
+        [data-testid="stSidebar"] {
+            position: fixed;
+            width: 300px !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+menu_options = ["🏠 Home", "✏️ Data Entry", "📜 Inventory", "📊 Surplus"]st.sidebar.header("📋 Navigation")
+menu_options = ["🏠 Home", "✏️ Data Entry", "📜 Inventory", "📊 Surplus"]
+
+# Ensure session state initializes correctly
+if "menu" not in st.session_state:
+    st.session_state["menu"] = menu_options[0]
+
+if "last_scroll" not in st.session_state:
+    st.session_state["last_scroll"] = 0
+
+# Detect Scroll Position (Ensure it's initialized)
+scroll_position = streamlit_js_eval(js_expressions="window.scrollY", want_output=True, key="scroll") or 0
+
+# Ensure scroll_position is numeric
+try:
+    scroll_position = int(scroll_position)
+except ValueError:
+    scroll_position = st.session_state["last_scroll"]
+
+# Detect if user is scrolling down
+if scroll_position > st.session_state["last_scroll"] + 30:  # Adjust threshold if needed
+    current_index = menu_options.index(st.session_state["menu"])
+    next_index = (current_index + 1) % len(menu_options)  # Move to next page
+    st.session_state["menu"] = menu_options[next_index]
+    st.session_state["last_scroll"] = scroll_position
+    st.rerun()
+
+# Sidebar menu with manual selection support
+menu = st.sidebar.radio("Select an Option:", menu_options, index=menu_options.index(st.session_state["menu"]))
+
+if menu != st.session_state["menu"]:
+    st.session_state["menu"] = menu
+    st.rerun()
+
+# Display Home Page
+if menu == "🏠 Home":
+    st.image(fis_logo, width=250)
+    st.subheader("🎓 Genius Hour Project by Jérémie")
+    st.write(
+        """
+        The **FIS Food Waste AI-Management System** is part of **Jérémie’s Genius Hour project** at the French International School of Hong Kong. 
+        His goal is to use **Artificial Intelligence (AI) to track, predict, and reduce food waste** within the school community.
+
+        ### 🔍 Why This Project?
+        Jérémie noticed that FIS generates a significant amount of **avoidable food waste**. His vision is to **leverage AI to optimize food usage, 
+        minimize waste, and help local food banks** by redistributing surplus.
+
+        ### 📌 How Does It Work?
+        - 🍎 **Tracks** food purchases and consumption data.
+        - 📈 **Predicts** future food surplus using AI.
+        - 📊 **Visualizes** surplus data with easy-to-read charts.
+        - 🤝 **Connects** with local food banks to redistribute extra food.
+
+        🚀 **Together, we can make FIS more sustainable!**
+        """
+    )
+
+# Data Entry Page
+elif menu == "✏️ Data Entry":
+    st.subheader("📋 Add Food Purchase")
+    food = st.text_input("Enter food name:")
+    quantity = st.number_input("Enter quantity (kg):", min_value=0.1, step=0.1)
+    purchase_date = st.date_input("Purchase Date", datetime.date.today())
+    expiry_date = st.date_input("Expiry Date", datetime.date.today())
+
+    if st.button("➕ Add Food"):
+        with open(purchase_file, "a") as file:
+            file.write(f"{food},{quantity},{purchase_date},{expiry_date}\n")
+        st.success(f"{quantity} kg of {food} added!")
+
+    st.subheader("🍽️ Log Food Consumption")
+    food_consumed = st.text_input("Enter food name (consumed):")
+    quantity_consumed = st.number_input("Enter quantity (kg, consumed):", min_value=0.1, step=0.1)
+    consumption_date = st.date_input("Consumption Date", datetime.date.today())
+
+    if st.button("✅ Log Consumption"):
+        with open(consumption_file, "a") as file:
+            file.write(f"{food_consumed},{quantity_consumed},{consumption_date}\n")
+        st.success(f"{quantity_consumed} kg of {food_consumed} logged as consumed!")
+
+# Inventory Page
+elif menu == "📜 Inventory":
+    purchases, consumption = load_data()
+    st.subheader("📋 Food Inventory")
+    st.write("### Purchase Data")
+    st.dataframe(purchases)
+    st.write("### Consumption Data")
+    st.dataframe(consumption)
+
+# Surplus Page
+elif menu == "📊 Surplus":
+    purchases, consumption = load_data()
+    st.subheader("📊 Food Surplus Visualization")
+
+    if purchases.empty:
+        st.warning("⚠️ No purchase data found.")
+    else:
+        purchases["Purchased"] = pd.to_numeric(purchases["Purchased"], errors="coerce")
+        surplus = purchases.groupby("Food")["Purchased"].sum()
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bars = surplus.plot(kind="bar", ax=ax, color="green")
+        ax.set_xlabel("Food Item")
+        ax.set_ylabel("Quantity (kg)")
+        ax.set_title("Available Surplus by Food Type")
+
+        # Add food icons
+        for i, bar in enumerate(bars.patches):
+            food_name = surplus.index[i].lower()
+            icon_file = os.path.join(food_icon_path, f"{food_name}.png")
+
+            if os.path.exists(icon_file):
+                img = Image.open(icon_file)
+                img = img.resize((40, 40))
+                x_offset = bar.get_x() + bar.get_width() / 2 - 0.1
+                y_offset = bar.get_height() + 0.5
+                ax.imshow(img, extent=[x_offset, x_offset + 0.2, y_offset, y_offset + 1], aspect="auto")
+
+        st.pyplot(fig)
+
